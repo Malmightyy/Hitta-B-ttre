@@ -2,87 +2,253 @@
 <html lang="sv">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kartapp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Hitta Bättre</title>
 
   <!-- MapLibre GL JS -->
   <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
 
   <style>
-    html, body { height: 100%; margin: 0; }
-    #app { height: 100%; display: flex; flex-direction: column; }
-    #topbar {
-      display: flex; gap: 8px; padding: 10px;
-      background: #111; color: #fff; align-items: center;
+    :root{
+      --bg: #0f0f10;
+      --panel: rgba(18,18,20,0.92);
+      --text: #fff;
+      --muted: rgba(255,255,255,0.72);
+      --border: rgba(255,255,255,0.12);
+      --shadow: 0 10px 30px rgba(0,0,0,0.55);
+      --radius: 16px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
     }
-    #query {
-      flex: 1;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #1b1b1b;
-      color: #fff;
-      outline: none;
+
+    html, body { height: 100%; margin: 0; background: var(--bg); }
+    #app { height: 100%; position: relative; overflow: hidden; }
+    #map { position: absolute; inset: 0; }
+
+    /* Top brand bar */
+    #brand {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: calc(10px + var(--safe-top));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 5;
     }
-    button {
+    #brand .pill {
+      pointer-events: auto;
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
       padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid #333;
-      background: #222;
-      color: #fff;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.35);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      font: 700 14px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    #brand .pill small {
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    /* Floating right-side buttons */
+    #fabStack {
+      position: absolute;
+      right: 12px;
+      top: calc(140px + var(--safe-top)); /* flyttad ner så den inte blockerar +/− */
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 6;
+    }
+    .fab {
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(18,18,20,0.75);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      display: grid;
+      place-items: center;
       cursor: pointer;
       user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
-    button.active {
-      background: #2b6;
-      border-color: #2b6;
-      color: #000;
-      font-weight: 700;
+    .fab:active { transform: scale(0.98); }
+    .fab.active {
+      background: rgba(43,182,102,0.90);
+      color: #06140b;
+      border-color: rgba(43,182,102,0.95);
+      font-weight: 900;
     }
-    #map { flex: 1; }
-    .hint {
-      padding: 6px 10px;
-      background: #111;
-      color: #bbb;
-      font-size: 12px;
-      line-height: 1.3;
+
+    .icon {
+      width: 22px;
+      height: 22px;
+      display: block;
     }
-    #status { opacity: 0.9; }
+
+    /* Bottom search bar */
+    #bottomBar {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: calc(12px + var(--safe-bottom));
+      z-index: 7;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--panel);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    #bottomInner {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 12px;
+      align-items: center;
+    }
+
+    #query {
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      outline: none;
+      font: 600 15px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    #query::placeholder { color: rgba(255,255,255,0.55); }
+
+    #searchBtn {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.10);
+      color: var(--text);
+      cursor: pointer;
+      font: 900 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #searchBtn:active { transform: scale(0.99); }
+
+    #statusRow {
+      padding: 0 12px 10px 12px;
+      color: var(--muted);
+      font: 600 12px/1.2 system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      background: rgba(0,0,0,0.12);
+    }
+
+    /* Attribution: gör den liten och diskret */
+    .maplibregl-ctrl-attrib {
+      background: rgba(0,0,0,0.20) !important;
+      border: 1px solid rgba(255,255,255,0.10) !important;
+      border-radius: 999px !important;
+      padding: 2px 6px !important;
+      box-shadow: none !important;
+      max-width: 72vw !important;
+      font-size: 10px !important;
+      line-height: 1.2 !important;
+    }
+    .maplibregl-ctrl-attrib a {
+      color: rgba(255,255,255,0.75) !important;
+      text-decoration: none !important;
+    }
+    /* Placering: håll den nere i hörnet och undan bottenbaren */
+    .maplibregl-ctrl-bottom-right {
+      right: 6px !important;
+      bottom: calc(78px + var(--safe-bottom)) !important; /* över bottenbaren */
+    }
+
+    /* Desktop-polish */
+    @media (min-width: 900px) {
+      #bottomBar { left: 20px; right: 20px; max-width: 560px; margin: 0 auto; }
+      #brand { left: 20px; right: 20px; }
+      #fabStack { right: 20px; }
+    }
   </style>
 </head>
 
 <body>
   <div id="app">
-    <div id="topbar">
-      <input id="query" placeholder="Sök adress (t.ex. 'Hedentorpsvägen 11')" />
-      <button id="searchBtn">Sök</button>
-      <button id="followBtn">Följ mig</button>
-    </div>
-
-    <div class="hint">
-      GPS på mobil kräver HTTPS (GitHub Pages funkar). Om du drar kartan själv så pausas “Följ mig”.
-      <span id="status"></span>
-    </div>
-
     <div id="map"></div>
+
+    <div id="brand">
+      <div class="pill">
+        <span>Hitta Bättre</span>
+        <small id="miniStatus">Redo</small>
+      </div>
+    </div>
+
+    <div id="fabStack">
+      <!-- Follow (crosshair) -->
+      <button id="followFab" class="fab" title="Följ min position" aria-label="Följ min position">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="6.5" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+        </svg>
+      </button>
+
+      <!-- Recenter to last searched marker -->
+      <button id="recenterFab" class="fab" title="Centrera på sökmarkör" aria-label="Centrera på sökmarkör">
+        <svg class="icon" viewBox="0 0 24 24" fill="none">
+          <path d="M12 21s7-5 7-11a7 7 0 1 0-14 0c0 6 7 11 7 11Z" stroke="currentColor" stroke-width="2"></path>
+          <circle cx="12" cy="10" r="2.5" fill="currentColor"></circle>
+        </svg>
+      </button>
+    </div>
+
+    <div id="bottomBar">
+      <div id="bottomInner">
+        <input id="query" placeholder="Sök adress (t.ex. Hedentorpsvägen 11)" />
+        <button id="searchBtn">Sök</button>
+      </div>
+      <div id="statusRow">
+        <span id="status">Tips: zooma till 17+ för husnummer.</span>
+        <span id="gps">GPS: –</span>
+      </div>
+    </div>
   </div>
 
   <script>
     // ============================
-    // UI
+    // UI helpers
     // ============================
     const statusEl = document.getElementById("status");
+    const miniStatusEl = document.getElementById("miniStatus");
+    const gpsEl = document.getElementById("gps");
     const queryEl = document.getElementById("query");
     const searchBtn = document.getElementById("searchBtn");
-    const followBtn = document.getElementById("followBtn");
+    const followFab = document.getElementById("followFab");
+    const recenterFab = document.getElementById("recenterFab");
 
     function setStatus(msg) {
-      statusEl.textContent = msg ? " • " + msg : "";
+      statusEl.textContent = msg || "";
+      miniStatusEl.textContent = msg ? msg.slice(0, 24) : "Redo";
+    }
+    function setGps(msg) {
+      gpsEl.textContent = msg || "GPS: –";
     }
 
     // ============================
-    // Geokodning (Nominatim) – sparsam användning (manuell sökknapp)
+    // Geokodning (Nominatim) – manuell sökknapp för att inte spamma
     // ============================
     async function geocode(query) {
       const q = (query || "").trim();
@@ -103,31 +269,51 @@
     }
 
     // ============================
-    // Karta (MapLibre + OpenFreeMap style)
+    // MapLibre + OpenFreeMap style
     // ============================
-    const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"; // OpenFreeMap Quick Start :contentReference[oaicite:1]{index=1}
+    const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
 
     const map = new maplibregl.Map({
       container: "map",
       style: STYLE_URL,
-      center: [18.0686, 59.3293], // fallback (Stockholm) tills vi geokodar startadressen
+      center: [18.0686, 59.3293], // fallback
       zoom: 13
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
+    // Attribution: kompakt från start
+    const attribControl = new maplibregl.AttributionControl({ compact: true });
+    map.addControl(attribControl, "bottom-right");
+
+    // ============================
     // Markörer
+    // ============================
     let searchMarker = null;
+    let lastSearchLngLat = null;
 
-    // Användarposition
+    function setSearchMarker(lon, lat, label) {
+      if (searchMarker) searchMarker.remove();
+      lastSearchLngLat = [lon, lat];
+
+      searchMarker = new maplibregl.Marker()
+        .setLngLat([lon, lat])
+        .setPopup(new maplibregl.Popup({ offset: 24 }).setText(label || "Plats"))
+        .addTo(map);
+
+      searchMarker.getPopup().addTo(map);
+    }
+
+    // ============================
+    // Follow mode (GPS)
+    // ============================
     let userMarker = null;
     let followMode = false;
     let watchId = null;
 
     function setFollow(on) {
       followMode = on;
-      followBtn.classList.toggle("active", followMode);
+      followFab.classList.toggle("active", followMode);
 
       if (followMode) startWatching();
       else stopWatching();
@@ -162,10 +348,14 @@
           }
 
           if (followMode) {
-            map.easeTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 16), duration: 500 });
+            map.easeTo({
+              center: [lon, lat],
+              zoom: Math.max(map.getZoom(), 16),
+              duration: 450
+            });
           }
 
-          setStatus(`GPS accuracy ~${acc}m`);
+          setGps(`GPS: ~${acc}m`);
         },
         (err) => {
           console.error(err);
@@ -180,44 +370,46 @@
       );
     }
 
-    followBtn.addEventListener("click", () => {
+    followFab.addEventListener("click", () => {
       setFollow(!followMode);
-      setStatus(followMode ? "Follow på." : "Follow av.");
+      setStatus(followMode ? "Följer dig" : "Follow av");
     });
 
-    // Pausa follow om användaren drar kartan
+    // Pausa follow om användaren drar kartan (så den inte slåss med fingret)
     map.on("dragstart", () => {
       if (followMode) {
-        setStatus("Du drog kartan. Follow pausad tills du trycker 'Följ mig' igen.");
         setFollow(false);
+        setStatus("Follow pausad (du drog kartan)");
       }
     });
 
+    // Recenter to last searched marker
+    recenterFab.addEventListener("click", () => {
+      if (!lastSearchLngLat) {
+        setStatus("Ingen sökmarkör än");
+        return;
+      }
+      map.easeTo({ center: lastSearchLngLat, zoom: Math.max(map.getZoom(), 17), duration: 450 });
+      setStatus("Centrerad");
+    });
+
     // ============================
-    // “Fixa husnummer”: tvinga fram eget housenumber-lager (vektor)
+    // Husnummer: extra lager (vektor)
     // ============================
     function tryAddHouseNumberLayer() {
       const style = map.getStyle();
       if (!style || !style.sources) return;
 
-      // Hitta första vektorkällan i stilen
       const vectorSources = Object.entries(style.sources)
         .filter(([_, s]) => s && s.type === "vector")
         .map(([name]) => name);
 
-      if (vectorSources.length === 0) {
-        setStatus("Hittade ingen vektorkälla för husnummer.");
-        return;
-      }
+      if (vectorSources.length === 0) return;
 
       const src = vectorSources[0];
-
-      // Undvik dubbel-add
       if (map.getLayer("housenumber-force")) return;
 
-      // Försök lägga husnummer ovanpå andra labels.
-      // OpenMapTiles schema brukar ha source-layer = "housenumber".
-      // Vi försöker flera property-namn för att maximera chans.
+      // Om source-layer "housenumber" inte finns i stilen så syns inget (men appen funkar).
       map.addLayer({
         id: "housenumber-force",
         type: "symbol",
@@ -250,36 +442,7 @@
           "text-halo-blur": 0.5
         }
       });
-
-      setStatus("Husnummer-lager aktivt (zoom 17+).");
     }
-
-    map.on("load", async () => {
-      // 1) Starta på Hedentorpsvägen 11
-      // (Obs: om det finns flera “Hedentorpsvägen 11” i världen så tar vi första träffen.
-      // Vill du göra den 100% stabil, skriv "Hedentorpsvägen 11, <stad>, Sverige".)
-      try {
-        setStatus("Startar vid Hedentorpsvägen 11…");
-        const start = await geocode("Hedentorpsvägen 11, Sverige");
-        if (start) {
-          map.jumpTo({ center: [start.lon, start.lat], zoom: 17 });
-          searchMarker = new maplibregl.Marker()
-            .setLngLat([start.lon, start.lat])
-            .setPopup(new maplibregl.Popup({ offset: 25 }).setText(start.name))
-            .addTo(map);
-          searchMarker.getPopup().addTo(map);
-          setStatus("Startposition satt.");
-        } else {
-          setStatus("Kunde inte hitta startadressen.");
-        }
-      } catch (e) {
-        console.error(e);
-        setStatus("Fel vid start-geokodning.");
-      }
-
-      // 2) Lägg på husnummer-lager
-      tryAddHouseNumberLayer();
-    });
 
     // ============================
     // Sök
@@ -291,25 +454,18 @@
       try {
         const result = await geocode(q);
         if (!result) {
-          setStatus("Ingen träff.");
+          setStatus("Ingen träff");
           alert("Ingen träff på den adressen.");
           return;
         }
 
-        if (searchMarker) searchMarker.remove();
+        setSearchMarker(result.lon, result.lat, result.name);
+        map.easeTo({ center: [result.lon, result.lat], zoom: 17, duration: 450 });
 
-        searchMarker = new maplibregl.Marker()
-          .setLngLat([result.lon, result.lat])
-          .setPopup(new maplibregl.Popup({ offset: 25 }).setText(result.name))
-          .addTo(map);
-
-        map.easeTo({ center: [result.lon, result.lat], zoom: 17, duration: 500 });
-        searchMarker.getPopup().addTo(map);
-
-        setStatus("Hittad. Zoom 17 för husnummer.");
+        setStatus("Hittad");
       } catch (e) {
         console.error(e);
-        setStatus("Fel vid sök.");
+        setStatus("Fel vid sök");
         alert("Fel vid sök: " + e.message);
       }
     }
@@ -319,6 +475,38 @@
       if (e.key === "Enter") doSearch();
     });
 
+    // ============================
+    // Init
+    // ============================
+    map.on("load", async () => {
+      // Husnummer-lager
+      tryAddHouseNumberLayer();
+
+      // Tvinga attribution att INTE vara expanderad vid start
+      // MapLibre använder klassen "maplibregl-compact-show" när den är utfälld.
+      setTimeout(() => {
+        const attrib = document.querySelector(".maplibregl-ctrl-attrib");
+        if (attrib) attrib.classList.remove("maplibregl-compact-show");
+      }, 0);
+
+      // Starta vid Hedentorpsvägen 11
+      try {
+        setStatus("Startar…");
+        const start = await geocode("Hedentorpsvägen 11, Sverige");
+        if (start) {
+          map.jumpTo({ center: [start.lon, start.lat], zoom: 17 });
+          setSearchMarker(start.lon, start.lat, start.name);
+          setStatus("Redo");
+        } else {
+          setStatus("Startadress ej hittad");
+        }
+      } catch (e) {
+        console.error(e);
+        setStatus("Startfel");
+      }
+    });
+
+    // Prefill
     queryEl.value = "Hedentorpsvägen 11";
   </script>
 </body>
