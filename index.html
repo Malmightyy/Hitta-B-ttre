@@ -50,18 +50,14 @@
       backdrop-filter: blur(10px);
       box-shadow: var(--shadow);
       color: var(--text);
-      font: 700 14px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
-    }
-    #brand .pill small {
-      font-weight: 600;
-      color: var(--muted);
+      font: 800 14px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Arial;
     }
 
     /* Floating right-side buttons */
     #fabStack {
       position: absolute;
       right: 12px;
-      top: calc(140px + var(--safe-top)); /* flyttad ner så den inte blockerar +/− */
+      top: calc(140px + var(--safe-top)); /* ner så den inte blockerar +/− */
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -83,6 +79,8 @@
       -webkit-tap-highlight-color: transparent;
     }
     .fab:active { transform: scale(0.98); }
+
+    /* Highlight (samma för sikte och kompass) */
     .fab.active {
       background: rgba(43,182,102,0.90);
       color: #06140b;
@@ -90,11 +88,7 @@
       font-weight: 900;
     }
 
-    .icon {
-      width: 22px;
-      height: 22px;
-      display: block;
-    }
+    .icon { width: 22px; height: 22px; display: block; }
 
     /* Bottom search bar */
     #bottomBar {
@@ -155,7 +149,7 @@
       background: rgba(0,0,0,0.12);
     }
 
-    /* Attribution: gör den liten och diskret */
+    /* Attribution: liten och diskret, inte i vägen för bottenbar */
     .maplibregl-ctrl-attrib {
       background: rgba(0,0,0,0.20) !important;
       border: 1px solid rgba(255,255,255,0.10) !important;
@@ -170,13 +164,11 @@
       color: rgba(255,255,255,0.75) !important;
       text-decoration: none !important;
     }
-    /* Placering: håll den nere i hörnet och undan bottenbaren */
     .maplibregl-ctrl-bottom-right {
       right: 6px !important;
-      bottom: calc(78px + var(--safe-bottom)) !important; /* över bottenbaren */
+      bottom: calc(78px + var(--safe-bottom)) !important;
     }
 
-    /* Desktop-polish */
     @media (min-width: 900px) {
       #bottomBar { left: 20px; right: 20px; max-width: 560px; margin: 0 auto; }
       #brand { left: 20px; right: 20px; }
@@ -192,7 +184,6 @@
     <div id="brand">
       <div class="pill">
         <span>Hitta Bättre</span>
-        <small id="miniStatus">Redo</small>
       </div>
     </div>
 
@@ -206,11 +197,12 @@
         </svg>
       </button>
 
-      <!-- Recenter to last searched marker -->
-      <button id="recenterFab" class="fab" title="Centrera på sökmarkör" aria-label="Centrera på sökmarkör">
+      <!-- Compass / Heading-up -->
+      <button id="compassFab" class="fab" title="Rikta uppåt (kompass)" aria-label="Rikta uppåt (kompass)">
         <svg class="icon" viewBox="0 0 24 24" fill="none">
-          <path d="M12 21s7-5 7-11a7 7 0 1 0-14 0c0 6 7 11 7 11Z" stroke="currentColor" stroke-width="2"></path>
-          <circle cx="12" cy="10" r="2.5" fill="currentColor"></circle>
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle>
+          <path d="M12 3v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+          <path d="M10.5 13.5 14.8 9.2 13.5 13.5 9.2 14.8 10.5 13.5Z" fill="currentColor"></path>
         </svg>
       </button>
     </div>
@@ -232,20 +224,14 @@
     // UI helpers
     // ============================
     const statusEl = document.getElementById("status");
-    const miniStatusEl = document.getElementById("miniStatus");
     const gpsEl = document.getElementById("gps");
     const queryEl = document.getElementById("query");
     const searchBtn = document.getElementById("searchBtn");
     const followFab = document.getElementById("followFab");
-    const recenterFab = document.getElementById("recenterFab");
+    const compassFab = document.getElementById("compassFab");
 
-    function setStatus(msg) {
-      statusEl.textContent = msg || "";
-      miniStatusEl.textContent = msg ? msg.slice(0, 24) : "Redo";
-    }
-    function setGps(msg) {
-      gpsEl.textContent = msg || "GPS: –";
-    }
+    function setStatus(msg) { statusEl.textContent = msg || ""; }
+    function setGps(msg) { gpsEl.textContent = msg || "GPS: –"; }
 
     // ============================
     // Geokodning (Nominatim) – manuell sökknapp för att inte spamma
@@ -276,25 +262,20 @@
     const map = new maplibregl.Map({
       container: "map",
       style: STYLE_URL,
-      center: [18.0686, 59.3293], // fallback
+      center: [18.0686, 59.3293],
       zoom: 13
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-
-    // Attribution: kompakt från start
-    const attribControl = new maplibregl.AttributionControl({ compact: true });
-    map.addControl(attribControl, "bottom-right");
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     // ============================
     // Markörer
     // ============================
     let searchMarker = null;
-    let lastSearchLngLat = null;
 
     function setSearchMarker(lon, lat, label) {
       if (searchMarker) searchMarker.remove();
-      lastSearchLngLat = [lon, lat];
 
       searchMarker = new maplibregl.Marker()
         .setLngLat([lon, lat])
@@ -310,6 +291,9 @@
     let userMarker = null;
     let followMode = false;
     let watchId = null;
+
+    // Fallback heading from GPS course
+    let lastCourseDeg = null;
 
     function setFollow(on) {
       followMode = on;
@@ -338,6 +322,11 @@
           const lon = pos.coords.longitude;
           const lat = pos.coords.latitude;
           const acc = Math.round(pos.coords.accuracy || 0);
+
+          // Some browsers expose heading when moving
+          if (typeof pos.coords.heading === "number" && !Number.isNaN(pos.coords.heading)) {
+            lastCourseDeg = pos.coords.heading;
+          }
 
           if (!userMarker) {
             userMarker = new maplibregl.Marker({ draggable: false })
@@ -372,76 +361,344 @@
 
     followFab.addEventListener("click", () => {
       setFollow(!followMode);
-      setStatus(followMode ? "Följer dig" : "Follow av");
     });
 
-    // Pausa follow om användaren drar kartan (så den inte slåss med fingret)
     map.on("dragstart", () => {
-      if (followMode) {
-        setFollow(false);
-        setStatus("Follow pausad (du drog kartan)");
-      }
-    });
-
-    // Recenter to last searched marker
-    recenterFab.addEventListener("click", () => {
-      if (!lastSearchLngLat) {
-        setStatus("Ingen sökmarkör än");
-        return;
-      }
-      map.easeTo({ center: lastSearchLngLat, zoom: Math.max(map.getZoom(), 17), duration: 450 });
-      setStatus("Centrerad");
+      if (followMode) setFollow(false);
     });
 
     // ============================
-    // Husnummer: extra lager (vektor)
+    // Compass / Heading-up mode
     // ============================
-    function tryAddHouseNumberLayer() {
+    let compassMode = false;
+    let orientationListenerActive = false;
+    let lastDeviceHeading = null; // store last heading from sensors
+
+    function normDeg(d) {
+      let x = d % 360;
+      if (x < 0) x += 360;
+      return x;
+    }
+
+    function setMapBearing(headingDeg) {
+      const b = normDeg(headingDeg);
+      // "You drive up": rotate map opposite of heading
+      map.rotateTo(-b, { duration: 120 });
+    }
+
+    function handleDeviceOrientation(e) {
+      let heading = null;
+
+      // iOS Safari gives absolute compass heading here if permitted
+      if (typeof e.webkitCompassHeading === "number") {
+        heading = e.webkitCompassHeading;
+      } else if (typeof e.alpha === "number") {
+        // alpha sometimes works as a rough heading
+        heading = e.alpha;
+      }
+
+      if (heading === null || Number.isNaN(heading)) return;
+      lastDeviceHeading = heading;
+
+      if (!compassMode) return;
+      setMapBearing(heading);
+    }
+
+    function startCompass() {
+      compassMode = true;
+      compassFab.classList.add("active"); // <-- highlight like the crosshair
+
+      // Enable rotate gestures when compass is on (optional)
+      map.dragRotate.enable();
+      map.touchZoomRotate.enableRotation();
+
+      const needsPermission =
+        (typeof DeviceOrientationEvent !== "undefined") &&
+        (typeof DeviceOrientationEvent.requestPermission === "function");
+
+      const attach = () => {
+        if (!orientationListenerActive) {
+          window.addEventListener("deviceorientation", handleDeviceOrientation, true);
+          orientationListenerActive = true;
+        }
+        setStatus("Kompass aktiv");
+      };
+
+      if (needsPermission) {
+        DeviceOrientationEvent.requestPermission()
+          .then((state) => {
+            if (state === "granted") attach();
+            else setStatus("Kompass nekad (kör GPS-fallback)");
+          })
+          .catch(() => setStatus("Kompass ej tillgänglig (kör GPS-fallback)"));
+      } else {
+        attach();
+      }
+    }
+
+    function stopCompass() {
+      compassMode = false;
+      compassFab.classList.remove("active");
+
+      map.rotateTo(0, { duration: 180 });
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+
+      setStatus("Kompass av");
+    }
+
+    compassFab.addEventListener("click", () => {
+      if (!compassMode) startCompass();
+      else stopCompass();
+    });
+
+    // Fallback: if compass is on but we don't have sensor updates, try GPS course
+    setInterval(() => {
+      if (!compassMode) return;
+
+      // If we recently got a device heading, prefer it
+      if (typeof lastDeviceHeading === "number" && !Number.isNaN(lastDeviceHeading)) return;
+
+      if (typeof lastCourseDeg === "number" && !Number.isNaN(lastCourseDeg)) {
+        setMapBearing(lastCourseDeg);
+      }
+    }, 500);
+
+    // ============================
+    // Husnummer: gör ALLT vi kan
+    // 1) Försök flera source-layers (olika stilar/tiles använder olika namn)
+    // 2) Överlagra via Overpass (addr:housenumber) i bbox när du zoomar in
+    // ============================
+
+    function getFirstVectorSourceName() {
       const style = map.getStyle();
-      if (!style || !style.sources) return;
+      if (!style || !style.sources) return null;
 
       const vectorSources = Object.entries(style.sources)
         .filter(([_, s]) => s && s.type === "vector")
         .map(([name]) => name);
 
-      if (vectorSources.length === 0) return;
+      return vectorSources.length ? vectorSources[0] : null;
+    }
 
-      const src = vectorSources[0];
-      if (map.getLayer("housenumber-force")) return;
+    function addHousenumberLayerFromSourceLayer(sourceName, sourceLayer, idSuffix) {
+      const id = `hn-${idSuffix}`;
+      if (map.getLayer(id)) return;
 
-      // Om source-layer "housenumber" inte finns i stilen så syns inget (men appen funkar).
       map.addLayer({
-        id: "housenumber-force",
+        id,
         type: "symbol",
-        source: src,
-        "source-layer": "housenumber",
-        minzoom: 16.5,
+        source: sourceName,
+        "source-layer": sourceLayer,
+        minzoom: 16.0,
         layout: {
+          "symbol-placement": "point",
           "text-field": [
             "coalesce",
             ["get", "addr:housenumber"],
             ["get", "housenumber"],
             ["get", "house_num"],
+            ["get", "addr_housenumber"],
+            ["get", "number"],
             ["get", "ref"]
           ],
           "text-size": [
             "interpolate", ["linear"], ["zoom"],
             16, 10,
-            18, 13,
+            17, 12,
+            18, 14,
             20, 16
           ],
-          "text-allow-overlap": false,
-          "text-ignore-placement": false,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
           "text-anchor": "center",
-          "text-padding": 2
+          "text-padding": 1,
+          "text-max-width": 2
         },
         paint: {
           "text-color": "#111",
           "text-halo-color": "#fff",
-          "text-halo-width": 1.5,
+          "text-halo-width": 2.0,
           "text-halo-blur": 0.5
         }
       });
+    }
+
+    function tryForceHouseNumbersVector() {
+      const src = getFirstVectorSourceName();
+      if (!src) return;
+
+      // These are common names across OpenMapTiles / other schemas.
+      // If some don’t exist, MapLibre will log it; the rest still works.
+      const candidates = [
+        "housenumber",
+        "house_number",
+        "address",
+        "addresses",
+        "building",
+        "buildings",
+        "poi",
+        "place",
+        "transportation",
+        "landuse"
+      ];
+
+      candidates.forEach((layerName, idx) => {
+        try {
+          addHousenumberLayerFromSourceLayer(src, layerName, `${idx}-${layerName}`);
+        } catch (_) {
+          // ignore: missing source-layer etc.
+        }
+      });
+    }
+
+    // ---- Overpass overlay (aggressiv, men effektiv när tiles/stilar vägrar) ----
+    // Throttle & cache so we don’t DDoS Overpass like a maniac.
+    const overpassEndpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://overpass.openstreetmap.ru/api/interpreter"
+    ];
+
+    let overpassEnabled = true;
+    let lastOverpassFetchAt = 0;
+    let lastBboxKey = null;
+    let overpassInFlight = false;
+
+    function bboxToKey(b) {
+      // round to reduce spam; OK for labels
+      const r = (x) => Math.round(x * 1000) / 1000;
+      return [r(b.getSouth()), r(b.getWest()), r(b.getNorth()), r(b.getEast())].join(",");
+    }
+
+    function ensureOverpassSourceAndLayer() {
+      if (!map.getSource("hn-overpass")) {
+        map.addSource("hn-overpass", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] }
+        });
+      }
+
+      if (!map.getLayer("hn-overpass-label")) {
+        map.addLayer({
+          id: "hn-overpass-label",
+          type: "symbol",
+          source: "hn-overpass",
+          minzoom: 16.2,
+          layout: {
+            "text-field": ["get", "hn"],
+            "text-size": [
+              "interpolate", ["linear"], ["zoom"],
+              16, 10,
+              17, 12,
+              18, 14,
+              20, 16
+            ],
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-anchor": "center",
+            "text-padding": 1
+          },
+          paint: {
+            "text-color": "#111",
+            "text-halo-color": "#fff",
+            "text-halo-width": 2.0,
+            "text-halo-blur": 0.5
+          }
+        });
+      }
+    }
+
+    async function fetchOverpassHousenumbers(bounds) {
+      if (!overpassEnabled) return;
+      if (overpassInFlight) return;
+
+      const z = map.getZoom();
+      if (z < 16.2) {
+        // clear when zoomed out
+        const src = map.getSource("hn-overpass");
+        if (src) src.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastOverpassFetchAt < 3500) return; // throttle
+      const bboxKey = bboxToKey(bounds);
+      if (bboxKey === lastBboxKey) return;
+
+      lastOverpassFetchAt = now;
+      lastBboxKey = bboxKey;
+      overpassInFlight = true;
+
+      const south = bounds.getSouth();
+      const west  = bounds.getWest();
+      const north = bounds.getNorth();
+      const east  = bounds.getEast();
+
+      // Keep bbox sane: Overpass hates enormous boxes.
+      // If user zoomed out too far, do nothing.
+      const span = Math.max(Math.abs(north - south), Math.abs(east - west));
+      if (span > 0.08) { // roughly "too big" for label scraping
+        overpassInFlight = false;
+        return;
+      }
+
+      const q = `
+[out:json][timeout:25];
+(
+  node["addr:housenumber"](${south},${west},${north},${east});
+  way["addr:housenumber"](${south},${west},${north},${east});
+  relation["addr:housenumber"](${south},${west},${north},${east});
+);
+out center;
+      `.trim();
+
+      // Try endpoints until one works
+      let data = null;
+      for (const ep of overpassEndpoints) {
+        try {
+          const url = ep + "?data=" + encodeURIComponent(q);
+          const res = await fetch(url, { method: "GET", headers: { "Accept": "application/json" } });
+          if (!res.ok) continue;
+          data = await res.json();
+          break;
+        } catch (_) {}
+      }
+
+      try {
+        if (!data || !Array.isArray(data.elements)) {
+          overpassInFlight = false;
+          return;
+        }
+
+        const feats = [];
+        for (const el of data.elements) {
+          const tags = el.tags || {};
+          const hn = tags["addr:housenumber"];
+          if (!hn) continue;
+
+          let lon = null, lat = null;
+
+          if (el.type === "node") {
+            lat = el.lat; lon = el.lon;
+          } else if (el.center) {
+            lat = el.center.lat; lon = el.center.lon;
+          }
+
+          if (typeof lat !== "number" || typeof lon !== "number") continue;
+
+          feats.push({
+            type: "Feature",
+            properties: { hn: String(hn) },
+            geometry: { type: "Point", coordinates: [lon, lat] }
+          });
+        }
+
+        const src = map.getSource("hn-overpass");
+        if (src) src.setData({ type: "FeatureCollection", features: feats });
+      } finally {
+        overpassInFlight = false;
+      }
     }
 
     // ============================
@@ -479,17 +736,19 @@
     // Init
     // ============================
     map.on("load", async () => {
-      // Husnummer-lager
-      tryAddHouseNumberLayer();
+      // 1) Force vector housenumbers (multiple candidate layers)
+      tryForceHouseNumbersVector();
 
-      // Tvinga attribution att INTE vara expanderad vid start
-      // MapLibre använder klassen "maplibregl-compact-show" när den är utfälld.
+      // 2) Overpass overlay source/layer
+      ensureOverpassSourceAndLayer();
+
+      // 3) Keep attribution collapsed on start
       setTimeout(() => {
         const attrib = document.querySelector(".maplibregl-ctrl-attrib");
         if (attrib) attrib.classList.remove("maplibregl-compact-show");
       }, 0);
 
-      // Starta vid Hedentorpsvägen 11
+      // 4) Start at Hedentorpsvägen 11
       try {
         setStatus("Startar…");
         const start = await geocode("Hedentorpsvägen 11, Sverige");
@@ -504,7 +763,18 @@
         console.error(e);
         setStatus("Startfel");
       }
+
+      // Disable rotate gestures unless compass is on
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
+
+      // First Overpass pull after load (if zoom high enough)
+      fetchOverpassHousenumbers(map.getBounds());
     });
+
+    // Update Overpass housenumbers when you move/zoom (throttled)
+    map.on("moveend", () => fetchOverpassHousenumbers(map.getBounds()));
+    map.on("zoomend", () => fetchOverpassHousenumbers(map.getBounds()));
 
     // Prefill
     queryEl.value = "Hedentorpsvägen 11";
